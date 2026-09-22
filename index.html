@@ -205,6 +205,13 @@
   }
   .button-group{display:flex;gap:8px;margin-top:4px;}
 
+  .auth-switch{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;background:var(--bg);border:1px solid var(--border-bright);border-radius:5px;}
+  .auth-option{width:100%;padding:8px 10px;color:var(--text-dim);border-color:transparent;}
+  .auth-option:hover:not(:disabled){box-shadow:none;background:var(--bg-hover);}
+  .auth-option.active{color:var(--green-bright);border-color:var(--green-dim);background:rgba(62,240,122,0.08);}
+  .auth-fields{display:none;margin-top:14px;}
+  .auth-fields.active{display:block;}
+  .field-note{font-size:10.5px;color:var(--text-faint);margin-top:5px;}
   .status{
     padding:9px 12px;
     border-radius:4px;
@@ -462,12 +469,20 @@
           value="https://port4004-workspaces-ws-m7sob.ap21.trial.applicationstudio.cloud.sap/mcp">
       </div>
       <div class="form-group">
-        <label for="username">Username <span class="req">*</span></label>
-        <input type="text" id="username" placeholder="Your username" value="101">
+        <label>Authentication type <span class="req">*</span></label>
+        <div class="auth-switch" role="group" aria-label="Authentication type">
+          <button type="button" id="basicAuthButton" class="auth-option active" onclick="setAuthType('basic')">Basic Auth</button>
+          <button type="button" id="clientCredentialsButton" class="auth-option" onclick="setAuthType('client_credentials')">Client Credentials</button>
+        </div>
       </div>
-      <div class="form-group">
-        <label for="password">Password <span class="req">*</span></label>
-        <input type="password" id="password" placeholder="Your password">
+      <div id="basicAuthFields" class="auth-fields active">
+        <div class="form-group"><label for="username">Username <span class="req">*</span></label><input type="text" id="username" placeholder="Your username" value="101" autocomplete="username"></div>
+        <div class="form-group"><label for="password">Password <span class="req">*</span></label><input type="password" id="password" placeholder="Your password" autocomplete="current-password"></div>
+      </div>
+      <div id="clientCredentialsFields" class="auth-fields">
+        <div class="form-group"><label for="clientId">Client ID <span class="req">*</span></label><input type="text" id="clientId" placeholder="XSUAA service-key clientid" autocomplete="off"></div>
+        <div class="form-group"><label for="clientSecret">Client secret <span class="req">*</span></label><input type="password" id="clientSecret" placeholder="XSUAA service-key clientsecret" autocomplete="new-password"></div>
+        <div class="form-group"><label for="tokenUrl">Token URL <span class="req">*</span></label><input type="text" id="tokenUrl" placeholder="https://...authentication.../oauth/token"><div class="field-note">The backend exchanges these credentials for a bearer token.</div></div>
       </div>
       <div class="form-group">
         <label for="cookie">Session cookie (optional)</label>
@@ -541,26 +556,47 @@
 </div>
 
 <script>
-// const SERVER_URL = 'http://localhost:3000';
+//const SERVER_URL = 'http://localhost:3000';
 
 const SERVER_URL = 'https://mcp-proxy-server.vercel.app';
+// const SERVER_URL = 'https://port4000-workspaces-ws-i6gq2.ap21.trial.applicationstudio.cloud.sap/';
 
 let lastTools = [];
+let selectedAuthType = 'basic';
+
+function setAuthType(authType){
+  selectedAuthType = authType;
+  const isBasic = authType === 'basic';
+  document.getElementById('basicAuthFields').classList.toggle('active', isBasic);
+  document.getElementById('clientCredentialsFields').classList.toggle('active', !isBasic);
+  document.getElementById('basicAuthButton').classList.toggle('active', isBasic);
+  document.getElementById('clientCredentialsButton').classList.toggle('active', !isBasic);
+  clearResults();
+  setConnPill('offline', 'not connected');
+}
 
 function getCredentials(){
-  return {
-    url: document.getElementById('url').value,
-    username: document.getElementById('username').value,
-    password: document.getElementById('password').value,
-    cookie: document.getElementById('cookie').value
+  const common = {
+    url: document.getElementById('url').value.trim(),
+    authType: selectedAuthType,
+    cookie: document.getElementById('cookie').value.trim()
   };
+  if(selectedAuthType === 'client_credentials'){
+    return {...common, clientId: document.getElementById('clientId').value.trim(), clientSecret: document.getElementById('clientSecret').value, tokenUrl: document.getElementById('tokenUrl').value.trim()};
+  }
+  return {...common, username: document.getElementById('username').value.trim(), password: document.getElementById('password').value};
 }
 
 function validateCredentials(){
   const creds = getCredentials();
-  if(!creds.url || !creds.username || !creds.password){
-    showStatus('Fill in URL, username, and password to continue.', 'error');
-    return false;
+  if(!creds.url){ showStatus('Enter the MCP server URL.', 'error'); return false; }
+  try { new URL(creds.url); } catch { showStatus('Enter a valid absolute MCP server URL.', 'error'); return false; }
+  if(creds.authType === 'basic' && (!creds.username || !creds.password)){
+    showStatus('Fill in username and password for Basic Auth.', 'error'); return false;
+  }
+  if(creds.authType === 'client_credentials'){
+    if(!creds.clientId || !creds.clientSecret || !creds.tokenUrl){ showStatus('Fill in client ID, client secret, and token URL.', 'error'); return false; }
+    try { new URL(creds.tokenUrl); } catch { showStatus('Enter a valid absolute token URL.', 'error'); return false; }
   }
   return creds;
 }
